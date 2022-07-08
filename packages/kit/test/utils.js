@@ -97,14 +97,23 @@ export const test = base.extend({
 		// automatically wait for kit started event after navigation functions if js is enabled
 		const page_navigation_functions = ['goto', 'goBack', 'reload'];
 		page_navigation_functions.forEach((fn) => {
+			// @ts-ignore
 			const page_fn = page[fn];
 			if (!page_fn) {
 				throw new Error(`function does not exist on page: ${fn}`);
 			}
+			// @ts-ignore
 			page[fn] = async function (...args) {
 				const res = await page_fn.call(page, ...args);
 				if (javaScriptEnabled) {
-					await page.waitForSelector('body.started', { timeout: 5000 });
+					/**
+					 * @type {Promise<any>[]}
+					 */
+					const page_ready_conditions = [page.waitForSelector('body.started', { timeout: 5000 })];
+					if (process.env.DEV && fn !== 'goBack') { // if it is an spa back, there is no new connect
+						page_ready_conditions.push(waitForViteConnected(page, 5000))
+					}
+					await Promise.all(page_ready_conditions);
 				}
 				return res;
 			};
@@ -113,7 +122,6 @@ export const test = base.extend({
 		await use(page);
 	},
 
-	// @ts-expect-error
 	// eslint-disable-next-line
 	read_errors: ({}, use) => {
 		/** @param {string} path */
@@ -213,3 +221,45 @@ export async function start_server(handler, start = 4000) {
 export const plugin = process.env.CI
 	? (await import('../dist/vite.js')).sveltekit
 	: (await import('../src/vite/index.js')).sveltekit;
+
+/**
+ * wait for the vite client to log "[vite] connected." on browser console
+ *
+ * @param page {import('@playwright/test').Page}
+ * @param timeout {number}
+ * @returns {Promise<void>}
+ */
+async function waitForViteConnected(page, timeout) {
+
+	/**
+     * @type { NodeJS.Timeout }
+     */
+	let timer;
+	/**
+	 * @type {Function}
+	 */
+	let console_listener;
+	const timeout_promise = new Promise(
+		// eslint-disable-next-line no-unused-vars
+		(_, reject) =>
+			(timer = setTimeout(() => {
+				reject(`timeout, vite client not connected after ${timeout}ms`);
+			}, timeout))
+	);
+	const connected_promise = /** @type {Promise<void>} */(new Promise((resolve) => {
+		console_listener = (/** @type {{ text: () => string; }} */ data) => {
+			const text = data.text();
+			if (text.indexOf('[vite] connected.') > -1) {
+				resolve();
+			}
+		};
+		// @ts-ignore
+		page.on('console', console_listener);
+	}));
+
+	return Promise.race([connected_promise, timeout_promise]).finally(() => {
+		// @ts-ignore
+		page.off('console', console_listener);
+		clearTimeout(timer);
+	});
+}

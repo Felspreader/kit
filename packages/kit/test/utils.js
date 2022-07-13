@@ -4,7 +4,6 @@ import * as ports from 'port-authority';
 import { test as base, devices } from '@playwright/test';
 
 export const test = base.extend({
-	// @ts-expect-error
 	app: async ({ page }, use) => {
 		// these are assumed to have been put in the global scope by the layout
 		use({
@@ -34,7 +33,6 @@ export const test = base.extend({
 				page.evaluate((/** @type {(url: URL) => any} */ fn) => beforeNavigate(fn), fn),
 
 			/**
-			 * @param {() => void} fn
 			 * @returns {Promise<void>}
 			 */
 			afterNavigate: () => page.evaluate(() => afterNavigate(() => {})),
@@ -54,7 +52,6 @@ export const test = base.extend({
 		});
 	},
 
-	// @ts-expect-error
 	clicknav: async ({ page, javaScriptEnabled }, use) => {
 		/**
 		 * @param {string} selector
@@ -71,7 +68,6 @@ export const test = base.extend({
 		use(clicknav);
 	},
 
-	// @ts-expect-error
 	in_view: async ({ page }, use) => {
 		/** @param {string} selector */
 		async function in_view(selector) {
@@ -143,6 +139,7 @@ const known_devices = {
 	safari: devices['Desktop Safari']
 };
 
+// @ts-expect-error indexed access
 const test_browser_device = known_devices[test_browser];
 
 if (!test_browser_device) {
@@ -231,6 +228,11 @@ export const plugin = process.env.CI
  * @returns {Promise<void>}
  */
 async function wait_for_vite_connected_message(page, timeout) {
+	// remove once https://github.com/microsoft/playwright/issues/15550 is fixed/released
+	if (process.env.KIT_E2E_BROWSER === 'firefox') {
+		// crude wait instead of checking the console
+		return new Promise((resolve) => setTimeout(resolve, 100));
+	}
 	// @ts-ignore
 	return page.waitForEvent('console', {
 		predicate: async (message) => message?.text()?.includes('[vite] connected.'),
